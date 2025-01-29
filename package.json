@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "start": "concurrently \"npm run frontend\" \"npm run backend\"",
+    "frontend": "npm start",
+    "backend": "pipenv shell main"
+  },
+  "dependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
