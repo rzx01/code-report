@@ -20,5 +20,6 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix="/auth/routes")
     from .routes.report_routes import report_bp
     app.register_blueprint(report_bp, url_prefix="/report")
-
+    from .routes.file_routes import file_bp
+    app.register_blueprint(file_bp, url_prefix="/pdf")
     return app

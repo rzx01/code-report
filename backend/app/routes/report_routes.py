@@ -1,5 +1,5 @@
 from flask import Blueprint
-from ..controllers.report_controller import get_commits, generate_report
+from ..controllers.report_controller import get_commits, generate_report, summary
 
 report_bp = Blueprint("report", __name__)
 
