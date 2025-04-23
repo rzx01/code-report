@@ -1,12 +1,12 @@
 import { useState } from "react";
 import html2pdf from "html2pdf.js";
 
-
 function Report() {
   const [duration, setDuration] = useState("");
   const [commits, setCommits] = useState([]);
   const [report, setReport] = useState([]);
   const [summary, setSummary] = useState([]);
+  const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -26,7 +26,9 @@ function Report() {
       return;
     }
     setLoading(true);
-    fetch(`http://localhost:5000/report/commit?duration=${duration}&username=${username}`)
+    fetch(
+      `http://localhost:5000/report/commit?duration=${duration}&username=${username}`
+    )
       .then((response) => response.json())
       .then((data) => {
         setCommits(data);
@@ -43,7 +45,7 @@ function Report() {
       alert("No report data to download.");
       return;
     }
-  
+
     const markdownHTML = report
       .map((item, index) => {
         const locPerLang = item.loc_per_language
@@ -54,7 +56,7 @@ function Report() {
               )
               .join("")
           : "";
-  
+
         const langDist = item.language_distribution
           ? Object.entries(item.language_distribution)
               .map(
@@ -63,7 +65,7 @@ function Report() {
               )
               .join("")
           : "";
-  
+
         return `
           <div style="
             border: 1px solid #ddd;
@@ -78,8 +80,12 @@ function Report() {
             <p><strong>Elaboration:</strong> <em>${item.elaboration}</em></p>
             <p><strong>Repository:</strong> ${item.repo}</p>
             <p><strong>Date:</strong> ${item.date}</p>
-            <p><strong style="color: green;">LOC Added:</strong> ${item.additions}</p>
-            <p><strong style="color: red;">LOC Deleted:</strong> ${item.deletions}</p>
+            <p><strong style="color: green;">LOC Added:</strong> ${
+              item.additions
+            }</p>
+            <p><strong style="color: red;">LOC Deleted:</strong> ${
+              item.deletions
+            }</p>
   
             ${
               locPerLang
@@ -102,7 +108,7 @@ function Report() {
         `;
       })
       .join("");
-  
+
     const htmlContent = `
       <div style="
         padding: 30px;
@@ -119,7 +125,7 @@ function Report() {
         </p>
       </div>
     `;
-  
+
     const opt = {
       margin: 0.5,
       filename: `Code_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
@@ -127,13 +133,13 @@ function Report() {
       html2canvas: { scale: 2 },
       jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
     };
-  
+
     const element = document.createElement("div");
     element.innerHTML = htmlContent;
-  
+
     html2pdf().from(element).set(opt).save();
   };
-  
+
   const handleGenerateReport = () => {
     if (commits.length === 0) {
       alert("No commits to generate a report.");
@@ -152,14 +158,17 @@ function Report() {
       .then((data) => {
         if (data.elaborated_commits) {
           setReport(data.elaborated_commits);
-          setSummary(data.summary);
-          console.log(data);
+          setSummary(data.summarization);
+          setAnalysis(data.analysis);
+          console.log(data.elaborated_commits);
+          console.log(data.analysis);
         } else {
           alert("Failed to generate report.");
         }
         setGenerating(false);
       })
       .catch((error) => {
+        console.log(error);
         console.error("Error generating report:", error);
         alert("Something went wrong while generating the report.");
         setGenerating(false);
@@ -173,7 +182,8 @@ function Report() {
           Generate Your Code Report
         </h2>
         <p className="text-xl text-gray-600 text-center">
-          Select a duration to fetch your GitHub commit history and generate a detailed report.
+          Select a duration to fetch your GitHub commit history and generate a
+          detailed report.
         </p>
 
         <div className="text-center">
@@ -197,39 +207,56 @@ function Report() {
         ) : (
           commits.length > 0 && (
             <div>
-              <h3 className="text-2xl font-semibold text-gray-800 mb-4">Commits</h3>
-             
+              <h3 className="text-2xl font-semibold text-gray-800 mb-4">
+                Commits
+              </h3>
+
               <ul className="space-y-4">
                 {commits.map((commit, index) => (
                   <li key={index} className="bg-gray-100 p-4 rounded-lg">
-                    <p className="font-semibold text-gray-800">Message: {commit.message}</p>
+                    <p className="font-semibold text-gray-800">
+                      Message: {commit.message}
+                    </p>
                     <p className="text-sm text-gray-500">Repo: {commit.repo}</p>
                     <p className="text-sm text-gray-500">Date: {commit.date}</p>
-                    <p className="text-sm text-green-600">LOC Added: {commit.additions}</p>
-                    <p className="text-sm text-red-600">LOC Deleted: {commit.deletions}</p>
+                    <p className="text-sm text-green-600">
+                      LOC Added: {commit.additions}
+                    </p>
+                    <p className="text-sm text-red-600">
+                      LOC Deleted: {commit.deletions}
+                    </p>
 
                     {commit.loc_per_language && (
                       <div className="mt-2">
-                        <p className="text-sm font-semibold text-gray-700">LOC per Language:</p>
+                        <p className="text-sm font-semibold text-gray-700">
+                          LOC per Language:
+                        </p>
                         <ul className="ml-4 list-disc text-sm text-gray-600">
-                          {Object.entries(commit.loc_per_language).map(([lang, stats], idx) => (
-                            <li key={idx}>
-                              {lang}: +{stats.estimated_additions} / -{stats.estimated_deletions}
-                            </li>
-                          ))}
+                          {Object.entries(commit.loc_per_language).map(
+                            ([lang, stats], idx) => (
+                              <li key={idx}>
+                                {lang}: +{stats.estimated_additions} / -
+                                {stats.estimated_deletions}
+                              </li>
+                            )
+                          )}
                         </ul>
                       </div>
                     )}
 
                     {commit.language_distribution && (
                       <div className="mt-2">
-                        <p className="text-sm font-semibold text-gray-700">Language Distribution:</p>
+                        <p className="text-sm font-semibold text-gray-700">
+                          Language Distribution:
+                        </p>
                         <ul className="ml-4 list-disc text-sm text-gray-600">
-                          {Object.entries(commit.language_distribution).map(([lang, percent], idx) => (
-                            <li key={idx}>
-                              {lang}: {percent.toFixed(2)}%
-                            </li>
-                          ))}
+                          {Object.entries(commit.language_distribution).map(
+                            ([lang, percent], idx) => (
+                              <li key={idx}>
+                                {lang}: {percent.toFixed(2)}%
+                              </li>
+                            )
+                          )}
                         </ul>
                       </div>
                     )}
@@ -248,20 +275,42 @@ function Report() {
             >
               {generating ? "Generating Report..." : "Generate Report"}
             </button>
-          
           </div>
-          
         )}
 
         {report.length > 0 && (
           <div className="mt-10">
-            <h3 className="text-2xl font-semibold text-gray-800 mb-4 text-center">Elaborated Report</h3>
+            <h3 className="text-2xl font-semibold text-gray-800 mb-4 text-center">
+              Elaborated Report
+            </h3>
             {summary && (
-                <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded mb-6">
-                  <h3 className="font-semibold text-lg mb-2">📋 Summary</h3>
-                  <p>{summary}</p>
-                </div>
-              )}
+              <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded mb-6">
+                <h3 className="font-bold text-black text-lg mb-2"> Summary</h3>
+                <ul className="list-disc ml-5 space-y-1">
+                  {summary.map((point, index) => (
+                    <li key={index}>{point}</li>
+                  ))}
+                </ul>
+
+                {analysis && Object.keys(analysis).length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="font-semibold text-black  text-md mb-2">
+                       Commit Analysis
+                    </h4>
+                    <ul className="list-disc ml-5 space-y-1">
+                      {Object.entries(analysis).map(
+                        ([repoName, analysisText], index) => (
+                          <li key={index}>
+                            <strong>{repoName}:</strong> {analysisText}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <ul className="space-y-4">
               {report.map((item, index) => (
                 <li key={index} className="bg-yellow-100 p-4 rounded-lg">
@@ -269,32 +318,47 @@ function Report() {
                   <p className="text-gray-700">{item.original}</p>
                   <p className="font-bold text-gray-800 mt-2">Elaboration:</p>
                   <p className="text-gray-700 italic">{item.elaboration}</p>
-                  <p className="text-sm text-green-600">LOC Added: {item.additions}</p>
-                  <p className="text-sm text-red-600">LOC Deleted: {item.deletions}</p>
-                  <p className="text-sm text-gray-500 mt-1">Repo: {item.repo} | Date: {item.date}</p>
+                  <p className="text-sm text-green-600">
+                    LOC Added: {item.additions}
+                  </p>
+                  <p className="text-sm text-red-600">
+                    LOC Deleted: {item.deletions}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Repo: {item.repo} | Date: {item.date}
+                  </p>
 
                   {item.loc_per_language && (
                     <div className="mt-2">
-                      <p className="text-sm font-semibold text-gray-700">LOC per Language:</p>
+                      <p className="text-sm font-semibold text-gray-700">
+                        LOC per Language:
+                      </p>
                       <ul className="ml-4 list-disc text-sm text-gray-600">
-                        {Object.entries(item.loc_per_language).map(([lang, stats], idx) => (
-                          <li key={idx}>
-                            {lang}: +{stats.estimated_additions} / -{stats.estimated_deletions}
-                          </li>
-                        ))}
+                        {Object.entries(item.loc_per_language).map(
+                          ([lang, stats], idx) => (
+                            <li key={idx}>
+                              {lang}: +{stats.estimated_additions} / -
+                              {stats.estimated_deletions}
+                            </li>
+                          )
+                        )}
                       </ul>
                     </div>
                   )}
 
                   {item.language_distribution && (
                     <div className="mt-2">
-                      <p className="text-sm font-semibold text-gray-700">Language Distribution:</p>
+                      <p className="text-sm font-semibold text-gray-700">
+                        Language Distribution:
+                      </p>
                       <ul className="ml-4 list-disc text-sm text-gray-600">
-                        {Object.entries(item.language_distribution).map(([lang, percent], idx) => (
-                          <li key={idx}>
-                            {lang}: {percent.toFixed(2)}%
-                          </li>
-                        ))}
+                        {Object.entries(item.language_distribution).map(
+                          ([lang, percent], idx) => (
+                            <li key={idx}>
+                              {lang}: {percent.toFixed(2)}%
+                            </li>
+                          )
+                        )}
                       </ul>
                     </div>
                   )}
@@ -313,7 +377,6 @@ function Report() {
             </button>
           </div>
         )}
-
       </div>
     </div>
   );

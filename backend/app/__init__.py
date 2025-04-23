@@ -5,6 +5,12 @@ from .config import Config
 
 
 def create_app():
+    import nltk
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
+    nltk.download('averaged_perceptron_tagger')
+    nltk.download('averaged_perceptron_tagger_eng')
+
     app = Flask(__name__)
     CORS(app)
     app.config.from_object(Config)

@@ -1,9 +1,17 @@
 import os
 import requests
 import datetime
-from flask import request, jsonify
 from transformers import T5Tokenizer, T5ForConditionalGeneration
+import spacy
+import pytextrank
+import nltk
+from flask import request, jsonify
+from ..utils.text_analysis import build_style_profile, summarize_profile
 
+from collections import defaultdict
+
+nlp = spacy.load("en_core_web_lg")
+nlp.add_pipe("textrank")
 GITHUB_TOKEN = os.getenv("GITHUB_ACCESS_TOKEN")
 
 
@@ -120,7 +128,6 @@ def generate_report():
             return jsonify({"error": "Commits must be a list"}), 400
 
         elaborated_commits = []
-
         for commit in commits:
             message = commit.get("message")
             repo = commit.get("repo")
@@ -129,20 +136,15 @@ def generate_report():
             deletions = commit.get("deletions")
             lang_dist = commit.get("language_distribution", {})
             loc_per_lang = commit.get("loc_per_language", {})
+
             if not message:
                 continue
 
             prompt = f"Explain the commit message in 40 words: {message}"
-
             response = requests.post(
                 f"{GEMINI_API_URL}?key={API_KEY}",
                 json={
-                    "contents": [
-                        {
-                            "role": "user",
-                            "parts": [{"text": prompt}]
-                        }
-                    ]
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}]
                 },
                 headers={"Content-Type": "application/json"}
             )
@@ -168,67 +170,104 @@ def generate_report():
                 "language_distribution": lang_dist,
                 "loc_per_language": loc_per_lang
             })
-        # summarization = summary(elaborated_commits)
+
+        # This line is where the error might occur in the analyze function
+        analysis = analyze(elaborated_commits)
+
+        summarization = summary(elaborated_commits)
+
         return jsonify({
-            "elaborated_commits": elaborated_commits
+            "elaborated_commits": elaborated_commits,
+            "summarization": summarization,
+            "analysis": analysis
         }), 200
+
     except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        # Log the full traceback of the exception
+        logging.error(f"Error occurred during report generation: {str(e)}")
+        logging.error(traceback.format_exc())  # Logs the full traceback
+
+        # Return a more detailed error response
+        return jsonify({"error": f"An error occurred during report generation: {str(e)}"}), 500
+
+import traceback
+import logging
+
+logging.basicConfig(level=logging.ERROR)
 
 
 def summary(elaborated_commits):
-    try:
-        if not elaborated_commits or not isinstance(elaborated_commits, list):
-            return jsonify({"error": "Elaborated commits must be a list"}), 400
+    combined_text = " ".join(entry["elaboration"].strip() for entry in elaborated_commits)
+    doc = nlp(combined_text)
+    summary_sentences = [sent.text.strip() for sent in doc._.textrank.summary(limit_phrases=10, limit_sentences=10)]
+    return summary_sentences
 
-        commits_text = ""
-        for idx, commit in enumerate(elaborated_commits, 1):
-            commits_text += (
-                f"Commit {idx}:\n"
-                f"Repository: {commit.get('repo')}\n"
-                f"Date: {commit.get('date')}\n"
-                f"Elaboration: {commit.get('elaboration')}\n"
-                f"Additions: {commit.get('additions')}, Deletions: {commit.get('deletions')}\n"
-                f"Languages Used: {commit.get('language_distribution')}\n"
-                f"LOC Per Language: {commit.get('loc_per_language')}\n\n"
-            )
 
-        prompt = (
-            "You are an assistant summarizing commit activity from multiple repositories. "
-            "Based on the following elaborated commits, give an overall summary grouped by categories like: "
-            "features added, bugs fixed, refactoring, documentation, tests, etc. Be concise but informative.\n\n"
-            + commits_text
-        )
+def analyze(elaborated_commits):
+    profile_data = build_style_profile(elaborated_commits)
 
-        # Send the summary prompt to Gemini
-        response = requests.post(
-            f"{GEMINI_API_URL}?key={API_KEY}",
-            json={
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [{"text": prompt}]
-                    }
-                ]
-            },
-            headers={"Content-Type": "application/json"}
-        )
+    summary_result = {}
+    for dev in profile_data:
+        metric_map = defaultdict(list)
+        for i in range(len(profile_data[dev])):
+            for key in ['length', 'noun_ratio', 'verb_ratio', 'polarity', 'subjectivity', 'type_token_ratio']:
+                metric_map[key].append(profile_data[dev][i])
+        summary_result[dev] = summarize_profile(dev, metric_map)
 
-        if response.status_code == 200:
-            res_json = response.json()
-            summary_text = (
-                res_json.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "No summary available.")
-            )
-        else:
-            summary_text = f"Error: {response.status_code}, Unable to generate summary."
+    return summary_result
 
-        return jsonify({"summary": summary_text}), 200
-
-    except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    # try:
+    #     if not elaborated_commits or not isinstance(elaborated_commits, list):
+    #         return jsonify({"error": "Elaborated commits must be a list"}), 400
+    #
+    #     commits_text = ""
+    #     for idx, commit in enumerate(elaborated_commits, 1):
+    #         commits_text += (
+    #             f"Commit {idx}:\n"
+    #             f"Repository: {commit.get('repo')}\n"
+    #             f"Date: {commit.get('date')}\n"
+    #             f"Elaboration: {commit.get('elaboration')}\n"
+    #             f"Additions: {commit.get('additions')}, Deletions: {commit.get('deletions')}\n"
+    #             f"Languages Used: {commit.get('language_distribution')}\n"
+    #             f"LOC Per Language: {commit.get('loc_per_language')}\n\n"
+    #         )
+    #
+    #     prompt = (
+    #         "You are an assistant summarizing commit activity from multiple repositories. "
+    #         "Based on the following elaborated commits, give an overall summary grouped by categories like: "
+    #         "features added, bugs fixed, refactoring, documentation, tests, etc. Be concise but informative.\n\n"
+    #         + commits_text
+    #     )
+    #
+    #     # Send the summary prompt to Gemini
+    #     response = requests.post(
+    #         f"{GEMINI_API_URL}?key={API_KEY}",
+    #         json={
+    #             "contents": [
+    #                 {
+    #                     "role": "user",
+    #                     "parts": [{"text": prompt}]
+    #                 }
+    #             ]
+    #         },
+    #         headers={"Content-Type": "application/json"}
+    #     )
+    #
+    #     if response.status_code == 200:
+    #         res_json = response.json()
+    #         summary_text = (
+    #             res_json.get("candidates", [{}])[0]
+    #             .get("content", {})
+    #             .get("parts", [{}])[0]
+    #             .get("text", "No summary available.")
+    #         )
+    #     else:
+    #         summary_text = f"Error: {response.status_code}, Unable to generate summary."
+    #
+    #     return jsonify({"summary": summary_text}), 200
+    #
+    # except Exception as e:
+    #     return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 #
 # def generate_report():
