@@ -58,5 +58,6 @@ def summarize_profile(dev, metrics):
     style += "action-oriented" if verb_ratio > noun_ratio else "object-focused" + ". "
     style += f"Commit messages with a generally {sentiment} tone. "
     style += f"The vocabulary used is {'diverse' if ttr > 0.3 else 'limited'}."
+    style += f"It is written in a {'subjective' if subjectivity > 0.5 else 'objective'} manner."
 
     return style

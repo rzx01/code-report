@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 flask  = "*"
+flask-cors = "*"
+flask-dance = "*"
 
 [dev-packages]
 

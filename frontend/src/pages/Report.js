@@ -9,6 +9,7 @@ function Report() {
   const [analysis, setAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [patternsAnalysis, setPatternsAnalysis] = useState(null);
 
   const handleDurationChange = (e) => {
     setDuration(e.target.value);
@@ -45,6 +46,45 @@ function Report() {
       alert("No report data to download.");
       return;
     }
+
+    const summaryHTML = summary.length
+      ? `
+        <div style="
+          background: #dae8fc ;
+          border-left: 5px solid #facc15;
+          padding: 20px;
+          margin-bottom: 30px;
+          border-radius: 10px;
+        ">
+          <h2 style="color: #b45309;">📋 Summary</h2>
+          <ul>
+            ${summary.map((point) => `<li>${point}</li>`).join("")}
+          </ul>
+        </div>
+      `
+      : "";
+
+    const analysisHTML =
+      analysis && Object.keys(analysis).length > 0
+        ? `
+        <div style="
+          background: #f3f4f6;
+          border-left: 5px solid #6366f1;
+          padding: 20px;
+          margin-bottom: 30px;
+          border-radius: 10px;
+        ">
+          <h2 style="color: #4338ca;">📊 Commit Analysis</h2>
+          <ul>
+            ${Object.entries(analysis)
+              .map(
+                ([repo, text]) => `<li><strong>${repo}</strong>: ${text}</li>`
+              )
+              .join("")}
+          </ul>
+        </div>
+      `
+        : "";
 
     const markdownHTML = report
       .map((item, index) => {
@@ -116,10 +156,14 @@ function Report() {
         margin: auto;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       ">
-        <h1 style="text-align: center; color: #333; margin-bottom: 40px;">
+        <h1 style="text-align: center; color: #333; font-size:28px; margin-bottom: 40px;">
           🧾 Weekly Code Contribution Report
         </h1>
+  
+        ${summaryHTML}
+        ${analysisHTML}
         ${markdownHTML}
+  
         <p style="text-align: center; font-size: 12px; color: #888; margin-top: 40px;">
           Generated on ${new Date().toLocaleDateString()}
         </p>
@@ -160,8 +204,9 @@ function Report() {
           setReport(data.elaborated_commits);
           setSummary(data.summarization);
           setAnalysis(data.analysis);
-          console.log(data.elaborated_commits);
-          console.log(data.analysis);
+          setPatternsAnalysis(data.patterns_analysis);
+          console.log(patternsAnalysis);
+          // console.log(data.classification_result);
         } else {
           alert("Failed to generate report.");
         }
@@ -217,6 +262,7 @@ function Report() {
                     <p className="font-semibold text-gray-800">
                       Message: {commit.message}
                     </p>
+
                     <p className="text-sm text-gray-500">Repo: {commit.repo}</p>
                     <p className="text-sm text-gray-500">Date: {commit.date}</p>
                     <p className="text-sm text-green-600">
@@ -295,7 +341,7 @@ function Report() {
                 {analysis && Object.keys(analysis).length > 0 && (
                   <div className="mt-6">
                     <h4 className="font-semibold text-black  text-md mb-2">
-                       Commit Analysis
+                      Commit Analysis
                     </h4>
                     <ul className="list-disc ml-5 space-y-1">
                       {Object.entries(analysis).map(
@@ -308,6 +354,37 @@ function Report() {
                     </ul>
                   </div>
                 )}
+                <h2 className="text-xl font-bold text-yellow-900 mb-2">
+                  Patterns Analysis
+                </h2>
+
+                <h3 className="text-md font-semibold text-gray-800">
+                  Top Bigrams:
+                </h3>
+                <ul className="list-disc ml-5 mb-4">
+                  {patternsAnalysis.top_bigrams?.map((item, index) => (
+                    <li key={index}>
+                      {item.bigram} —{" "}
+                      <span className="text-sm text-gray-600">
+                        Count: {item.count}, PMI: {item.pmi.toFixed(2)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <h3 className="text-md font-semibold text-gray-800">
+                  Top Trigrams:
+                </h3>
+                <ul className="list-disc ml-5">
+                  {patternsAnalysis.top_trigrams?.map((item, index) => (
+                    <li key={index}>
+                      {item.trigram} —{" "}
+                      <span className="text-sm text-gray-600">
+                        Count: {item.count}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -316,6 +393,8 @@ function Report() {
                 <li key={index} className="bg-yellow-100 p-4 rounded-lg">
                   <p className="font-bold text-gray-800">Original:</p>
                   <p className="text-gray-700">{item.original}</p>
+                  <p className="font-bold text-gray-800 mt-2">Category:</p>
+                  <p className="text-gray-700">{item.category}</p>
                   <p className="font-bold text-gray-800 mt-2">Elaboration:</p>
                   <p className="text-gray-700 italic">{item.elaboration}</p>
                   <p className="text-sm text-green-600">

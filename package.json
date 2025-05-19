@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "start": "concurrently \"npm run frontend\" \"npm run backend\"",
-    "frontend": "npm start",
-    "backend": "pipenv shell main"
+    "frontend": "cd frontend && npm start",
+    "backend": "cd backend && pipenv run python app.py",
+    "dev": "concurrently \"npm run frontend\" \"npm run backend\""
   },
   "dependencies": {
     "concurrently": "^9.1.2"

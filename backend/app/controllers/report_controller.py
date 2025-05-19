@@ -4,11 +4,18 @@ import datetime
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 import spacy
 import pytextrank
-import nltk
+# import nltk
 from flask import request, jsonify
 from ..utils.text_analysis import build_style_profile, summarize_profile
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
 
-from collections import defaultdict
+from collections import defaultdict, Counter
+import re
+import math
+import pandas as pd
+from nltk import word_tokenize
+from nltk.util import ngrams
 
 nlp = spacy.load("en_core_web_lg")
 nlp.add_pipe("textrank")
@@ -171,29 +178,144 @@ def generate_report():
                 "loc_per_language": loc_per_lang
             })
 
-        # This line is where the error might occur in the analyze function
         analysis = analyze(elaborated_commits)
-
+        elaborated_commits = classification(elaborated_commits)
         summarization = summary(elaborated_commits)
+        patterns_analysis = analyze_commit_patterns(elaborated_commits)
 
         return jsonify({
             "elaborated_commits": elaborated_commits,
             "summarization": summarization,
-            "analysis": analysis
+            "analysis": analysis,
+            "patterns_analysis": patterns_analysis
         }), 200
 
     except Exception as e:
         # Log the full traceback of the exception
-        logging.error(f"Error occurred during report generation: {str(e)}")
-        logging.error(traceback.format_exc())  # Logs the full traceback
+        # logging.error(f"Error occurred during report generation: {str(e)}")
+        # logging.error(traceback.format_exc())  # Logs the full traceback
 
         # Return a more detailed error response
         return jsonify({"error": f"An error occurred during report generation: {str(e)}"}), 500
 
 import traceback
-import logging
+# import logging
+#
+# logging.basicConfig(level=logging.ERROR)
 
-logging.basicConfig(level=logging.ERROR)
+
+def preprocess_text(text):
+    text = text.lower()
+    tokens = word_tokenize(text)
+    tokens = [token for token in tokens if re.match(r'^[a-zA-Z_]+$', token)]
+    return tokens
+
+
+def get_ngrams(tokens, n):
+    """Generate n-grams from token list"""
+    return list(ngrams(tokens, n))
+
+
+def calculate_pmi(corpus, ngram, ngram_counts):
+    """Calculate Pointwise Mutual Information for an n-gram"""
+    n = len(ngram)
+    total_ngrams = len(ngram_counts)
+
+    # Count of the n-gram
+    ngram_count = ngram_counts.get(ngram, 0)
+    if ngram_count == 0:
+        return 0
+
+    # Calculate P(ngram)
+    p_ngram = ngram_count / total_ngrams
+
+    # Calculate P(w1) * P(w2) * ... for each word in the n-gram
+    p_product = 1
+    for word in ngram:
+        # Count how many times this word appears in any n-gram
+        word_count = sum(count for ng, count in ngram_counts.items() if word in ng)
+        p_word = word_count / total_ngrams
+        p_product *= p_word
+
+    if p_product == 0:
+        return 0
+
+    pmi = math.log2(p_ngram / p_product)
+    return pmi
+
+
+def analyze_commit_patterns(commits):
+    """Analyze commit messages for n-grams and collocations"""
+    try:
+        # Extract all commit messages
+        commit_messages = [item['original'] for item in commits]
+
+        # Tokenize all messages
+        all_tokens = []
+        for message in commit_messages:
+            all_tokens.extend(preprocess_text(message))
+
+        # Generate bigrams and trigrams
+        bigrams = get_ngrams(all_tokens, 2)
+        trigrams = get_ngrams(all_tokens, 3)
+
+        # Count frequencies
+        bigram_counts = Counter(bigrams)
+        trigram_counts = Counter(trigrams)
+
+        # Calculate PMI for all bigrams
+        bigram_pmi = {}
+        for bigram in set(bigrams):
+            bigram_pmi[bigram] = calculate_pmi(all_tokens, bigram, bigram_counts)
+
+        # Create a DataFrame of bigrams with counts and PMI
+        bigram_data = []
+        for bigram, count in bigram_counts.most_common():
+            pmi = bigram_pmi.get(bigram, 0)
+            bigram_data.append({
+                'bigram': ' '.join(bigram),
+                'count': count,
+                'pmi': pmi
+            })
+
+        bigram_df = pd.DataFrame(bigram_data)
+
+        # Convert to dictionary for JSON serialization
+        patterns_analysis = {
+            'top_bigrams': bigram_df.sort_values('pmi', ascending=False).head(10).to_dict('records'),
+            'top_trigrams': [{'trigram': ' '.join(t), 'count': c} for t, c in trigram_counts.most_common(5)]
+        }
+
+        return patterns_analysis
+
+    except Exception as e:
+        logging.error(f"Error in analyze_commit_patterns: {str(e)}")
+        return {"error": str(e)}
+
+
+def classification(elaborated_commit):
+    texts = [entry["elaboration"].strip() for entry in elaborated_commit]
+
+    # Vectorize with TF-IDF
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X = vectorizer.fit_transform(texts)
+
+    # KMeans Clustering
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    labels = kmeans.fit_predict(X)
+
+    # Define category mappings
+    label_map = {
+        0: "New Features",
+        1: "Testing/Debugging",
+        2: "Initializations",
+        3: "Maintenance/Miscellaneous"
+    }
+
+    for i, entry in enumerate(elaborated_commit):
+        entry["category"] = label_map[labels[i]]
+
+    return elaborated_commit
 
 
 def summary(elaborated_commits):
@@ -216,60 +338,6 @@ def analyze(elaborated_commits):
 
     return summary_result
 
-    # try:
-    #     if not elaborated_commits or not isinstance(elaborated_commits, list):
-    #         return jsonify({"error": "Elaborated commits must be a list"}), 400
-    #
-    #     commits_text = ""
-    #     for idx, commit in enumerate(elaborated_commits, 1):
-    #         commits_text += (
-    #             f"Commit {idx}:\n"
-    #             f"Repository: {commit.get('repo')}\n"
-    #             f"Date: {commit.get('date')}\n"
-    #             f"Elaboration: {commit.get('elaboration')}\n"
-    #             f"Additions: {commit.get('additions')}, Deletions: {commit.get('deletions')}\n"
-    #             f"Languages Used: {commit.get('language_distribution')}\n"
-    #             f"LOC Per Language: {commit.get('loc_per_language')}\n\n"
-    #         )
-    #
-    #     prompt = (
-    #         "You are an assistant summarizing commit activity from multiple repositories. "
-    #         "Based on the following elaborated commits, give an overall summary grouped by categories like: "
-    #         "features added, bugs fixed, refactoring, documentation, tests, etc. Be concise but informative.\n\n"
-    #         + commits_text
-    #     )
-    #
-    #     # Send the summary prompt to Gemini
-    #     response = requests.post(
-    #         f"{GEMINI_API_URL}?key={API_KEY}",
-    #         json={
-    #             "contents": [
-    #                 {
-    #                     "role": "user",
-    #                     "parts": [{"text": prompt}]
-    #                 }
-    #             ]
-    #         },
-    #         headers={"Content-Type": "application/json"}
-    #     )
-    #
-    #     if response.status_code == 200:
-    #         res_json = response.json()
-    #         summary_text = (
-    #             res_json.get("candidates", [{}])[0]
-    #             .get("content", {})
-    #             .get("parts", [{}])[0]
-    #             .get("text", "No summary available.")
-    #         )
-    #     else:
-    #         summary_text = f"Error: {response.status_code}, Unable to generate summary."
-    #
-    #     return jsonify({"summary": summary_text}), 200
-    #
-    # except Exception as e:
-    #     return jsonify({"error": f"An error occurred: {str(e)}"}), 500
-
-#
 # def generate_report():
 #     try:
 #         data = request.get_json()
